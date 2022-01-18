@@ -18,6 +18,7 @@ var db *sqlx.DB
 func main() {
 	var err error
 
+	// Full connection string is not checked in as is sensitive information
 	db, err = sqlx.Connect("sqlserver", fullConnString)
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
