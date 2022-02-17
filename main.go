@@ -20,6 +20,10 @@ func main() {
 
 	// Full connection string is not checked in as is sensitive information
 	db, err = sqlx.Connect("sqlserver", fullConnString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
 	}
@@ -44,11 +48,13 @@ func ReadPatients() error {
 
 	// Check if database is alive.
 	err := db.PingContext(ctx)
-	if err != nil {
-		return err
-	}
+	// if err != nil {
+	// 	return err
+	// }
 
-	tsql := fmt.Sprintf("select Customer.id, DOB, Gender, FirstName, LastName, Postcode	from Customer inner join Customer_Address on Customer_Address.CustomerID = Customer.ID where customer.ID in (1,	100, 123, 331, 333,	777, 3864, 3911, 3914, 3915, 3916, 3917, 3920, 3921, 7888, 35369, 35394, 36095, 37209, 37229, 37248, 37457)")
+	// tsql := fmt.Sprintf("select Customer.id, DOB, Gender, FirstName, LastName, Postcode	from Customer inner join Customer_Address on Customer_Address.CustomerID = Customer.ID where customer.ID in (1,	100, 123, 331, 333,	777, 3864, 3911, 3914, 3915, 3916, 3917, 3920, 3921, 7888, 35369, 35394, 36095, 37209, 37229, 37248, 37457)")
+
+	tsql := fmt.Sprintf("select distinct Customer.id, DOB, Gender, FirstName, LastName, Postcode from customer inner join Customer_Address on Customer_Address.CustomerID = Customer.ID where FirstName NOT LIKE '%%[^a-z-'']%%' and LastName NOT LIKE '%%[^a-z-'']%%'")
 
 	// Execute query
 	rows, err := db.QueryContext(ctx, tsql)
@@ -68,13 +74,22 @@ func ReadPatients() error {
 			return err
 		}
 
+		if PatientExists(patients, p) {
+			continue
+		}
+
 		patients = append(patients, p)
 	}
 
-	for _, p := range patients {
+	count := len(patients)
+
+	foundPatients := []*patient{}
+
+	for i, p := range patients {
+		fmt.Println(i, " - ", count)
 		request, err := http.NewRequest("GET", "https://pdrnhsinformationapi-sit.internal.pushsvcs.com/api/v1/PatientInformation/GetNhsNumber", nil)
 		if err != nil {
-			return err
+			continue
 		}
 
 		q := request.URL.Query()
@@ -98,6 +113,8 @@ func ReadPatients() error {
 		if response.StatusCode < 200 || response.StatusCode > 299 {
 			continue
 		}
+
+		foundPatients = append(foundPatients, p)
 
 		responseData, err := ioutil.ReadAll(response.Body)
 		if err != nil {
@@ -142,9 +159,19 @@ func ReadPatients() error {
 		p.ODSCode = infoReponse.Result.Practice.OrganisationDataServiceCode
 	}
 
-	file, _ := json.MarshalIndent(patients, "", " ")
+	file, _ := json.MarshalIndent(foundPatients, "", " ")
 
 	_ = ioutil.WriteFile("patients.json", file, 0644)
 
 	return nil
+}
+
+func PatientExists(patients []*patient, p *patient) bool {
+	for _, patient := range patients {
+		if patient.FirstName == p.FirstName && patient.LastName == p.LastName {
+			return true
+		}
+	}
+
+	return false
 }
